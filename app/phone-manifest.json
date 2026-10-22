@@ -1,0 +1,9 @@
+{
+  "name": "Flock Phone Controller",
+  "short_name": "FlockCtrl",
+  "start_url": "phone.html",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#1c1c1e",
+  "theme_color": "#1c1c1e"
+}

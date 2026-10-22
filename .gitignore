@@ -1,0 +1,10 @@
+# Installed by scripts/preflight.sh (npm ci in server/)
+server/node_modules/
+
+# Node's on-disk compile cache
+node-compile-cache/
+
+# Local Claude Code settings
+.claude/
+
+.DS_Store

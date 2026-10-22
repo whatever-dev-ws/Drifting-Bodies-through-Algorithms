@@ -1,0 +1,642 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Scene Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-window: #1c1c1e;
+      --bg-grouped: #2c2c2e;
+      --bg-elevated: #3a3a3c;
+      --separator: rgba(255,255,255,0.13);
+      --text-primary: #f2f2f7;
+      /* Text tones verified against WCAG AA (4.5:1) on the darkest surface
+         each is used on — see the contrast audit. Do not darken further. */
+      --text-secondary: #c7c7cc;
+      --text-tertiary: #a3a3a8;
+      /* --accent is a FILL that carries white text (4.9:1).
+         --accent-text is the lighter tone for accent-coloured text, icons and
+         borders on dark surfaces (4.9:1 on --bg-grouped). Not interchangeable. */
+      --accent: #0a6fd8;
+      --accent-text: #3d9bff;
+      --danger: #ff5147;
+      --control-bg: #48484a;
+      --control-bg-hover: #58585a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg-window);
+      color: var(--text-primary);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+    }
+
+    /* Header */
+    header {
+      position: sticky; top: 0; z-index: 10;
+      background: rgba(28,28,30,0.8);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--separator);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    header strong { font-size: 14px; font-weight: 600; }
+    #status { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+    /* Buttons */
+    button {
+      font: inherit; font-size: 13px; font-weight: 500;
+      background: var(--control-bg);
+      color: var(--text-primary);
+      border: none;
+      border-radius: 6px;
+      padding: 7px 14px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover { background: var(--control-bg-hover); }
+    button:active { background: var(--bg-elevated); }
+    #load-btn {
+      background: var(--accent);
+      color: #fff;
+    }
+    #load-btn:hover { filter: brightness(1.1); background: var(--accent); }
+    #clear-btn { color: var(--danger); }
+
+    /* Scene list */
+    #scene-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 16px 16px;
+    }
+    .empty-msg {
+      color: var(--text-secondary);
+      font-size: 13px;
+      text-align: center;
+      margin-top: 40px;
+      line-height: 1.6;
+    }
+    .scene-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 16px;
+      margin-bottom: 2px;
+      border-radius: 10px;
+      background: var(--bg-grouped);
+      cursor: pointer;
+      transition: background 0.15s, box-shadow 0.15s;
+      gap: 12px;
+    }
+    .scene-item:hover { background: var(--control-bg-hover); }
+    .scene-item.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(10,132,255,0.4);
+    }
+    .scene-num {
+      font-size: 12px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      min-width: 22px;
+      height: 22px;
+      line-height: 22px;
+      text-align: center;
+      border-radius: 6px;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+    }
+    .scene-item.active .scene-num {
+      background: rgba(255,255,255,0.25);
+      color: #fff;
+    }
+    .scene-name {
+      flex: 1;
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .scene-key {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-tertiary);
+      min-width: 16px;
+      text-align: center;
+      opacity: 0.6;
+    }
+    .scene-item.active .scene-key { color: rgba(255,255,255,0.7); }
+    .scene-remove {
+      font-size: 16px;
+      background: none;
+      border: none;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      line-height: 1;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .scene-item:hover .scene-remove { opacity: 1; }
+    .scene-remove:hover { color: var(--danger); }
+
+    /* Drag handle */
+    .scene-drag {
+      cursor: grab;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 4px 2px;
+      opacity: 0.35;
+    }
+    .scene-drag span {
+      display: block;
+      width: 12px;
+      height: 2px;
+      border-radius: 1px;
+      background: var(--text-tertiary);
+    }
+    .scene-item:hover .scene-drag { opacity: 0.8; }
+    .scene-item.active .scene-drag span { background: rgba(255,255,255,0.5); }
+
+    /* Drag feedback */
+    .scene-item.dragging {
+      opacity: 0.3;
+    }
+    .scene-item.drag-over-top {
+      border-top: 2px solid var(--accent-text);
+      margin-top: -2px;
+    }
+    .scene-item.drag-over-bottom {
+      border-bottom: 2px solid var(--accent-text);
+      margin-bottom: -2px;
+    }
+
+    /* Nav bar */
+    #nav {
+      padding: 12px 16px;
+      border-top: 1px solid var(--separator);
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .nav-btn {
+      flex: 1;
+      font-size: 18px; font-weight: 600;
+      background: var(--bg-grouped);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .nav-btn:active { background: var(--accent); color: #fff; }
+    .nav-btn:disabled { opacity: 0.25; cursor: default; }
+    .nav-btn:disabled:hover { background: var(--bg-grouped); }
+
+    /* Drop zone overlay */
+    .drop-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(10,132,255,0.14);
+      border: 3px dashed var(--accent-text);
+      border-radius: 12px;
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--accent-text);
+    }
+    .drop-overlay.visible { display: flex; }
+
+    /* Slew duration input */
+    .slew-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .slew-group input {
+      width: 44px;
+      background: var(--bg-grouped);
+      border: 1px solid var(--separator);
+      border-radius: 4px;
+      font: inherit;
+      font-size: 11px;
+      color: var(--text-primary);
+      text-align: right;
+      padding: 3px 4px;
+      -moz-appearance: textfield;
+    }
+    .slew-group input::-webkit-inner-spin-button,
+    .slew-group input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .slew-group input:focus { border-color: var(--accent-text); outline: none; }
+    .slew-group select {
+      background: var(--bg-grouped);
+      border: 1px solid var(--separator);
+      border-radius: 4px;
+      font: inherit;
+      font-size: 11px;
+      color: var(--text-primary);
+      padding: 3px 4px;
+      cursor: pointer;
+    }
+    .slew-group select:focus { border-color: var(--accent-text); outline: none; }
+
+    /* Transition indicator — visible only while a scene slew is running */
+    #slew-indicator {
+      display: none;
+      align-items: center;
+      gap: 5px;
+      margin-top: 3px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--accent-text);
+    }
+    #slew-indicator.visible { display: flex; }
+    #slew-indicator .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: slew-pulse 0.9s ease-in-out infinite;
+    }
+    @keyframes slew-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: 0.3; transform: scale(0.7); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #slew-indicator .dot { animation: none; }
+    }
+
+    /* Tip text */
+    .tip {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      text-align: center;
+      padding: 0 16px 4px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>Scene Manager</strong>
+      <div id="status">No scenes loaded</div>
+      <div id="slew-indicator"><span class="dot"></span>Transitioning…</div>
+    </div>
+    <div style="display:flex; gap:6px; align-items:center;">
+      <div class="slew-group">
+        <span>Slew</span>
+        <input type="number" id="slew-input" min="0" max="30" step="0.1" value="2.0">
+        <span>s</span>
+        <select id="slew-curve">
+          <option value="ease-out-cubic" selected>Ease Out Cubic</option>
+          <option value="linear">Linear</option>
+          <option value="ease-in">Ease In</option>
+          <option value="ease-out">Ease Out</option>
+          <option value="ease-in-out">Ease In-Out</option>
+          <option value="ease-in-cubic">Ease In Cubic</option>
+          <option value="exponential">Exponential</option>
+          <option value="logarithmic">Logarithmic</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:3px;cursor:pointer;">
+          <input type="checkbox" id="fade-toggle" style="accent-color:var(--accent-text);">
+          <span>Fade</span>
+        </label>
+      </div>
+      <button id="clear-btn" style="display:none;">Clear All</button>
+      <button id="load-btn">Load Scenes</button>
+      <input type="file" id="file-input" accept=".json" multiple style="display:none">
+    </div>
+  </header>
+
+  <div id="scene-list">
+    <div class="empty-msg" id="empty-msg">
+      Click <strong>Load Scenes</strong> or drag &amp; drop JSON files here.<br>
+      Navigate with <strong>&larr; &rarr;</strong> or drag to reorder.
+    </div>
+  </div>
+
+  <div class="tip" id="tip" style="display:none;">Click a scene to activate, drag to reorder</div>
+
+  <div id="nav">
+    <button class="nav-btn" id="prev-btn" disabled>&larr;</button>
+    <button class="nav-btn" id="next-btn" disabled>&rarr;</button>
+  </div>
+
+  <div class="drop-overlay" id="drop-overlay">Drop scene files here</div>
+
+  <script>
+    const chan = new BroadcastChannel("flock-controls");
+    const statusEl = document.getElementById("status");
+    const listEl = document.getElementById("scene-list");
+    const emptyMsg = document.getElementById("empty-msg");
+    const tipEl = document.getElementById("tip");
+    const loadBtn = document.getElementById("load-btn");
+    const clearBtn = document.getElementById("clear-btn");
+    const fileInput = document.getElementById("file-input");
+    const slewInput = document.getElementById("slew-input");
+    const slewCurve = document.getElementById("slew-curve");
+    const fadeToggle = document.getElementById("fade-toggle");
+    const prevBtn = document.getElementById("prev-btn");
+    const nextBtn = document.getElementById("next-btn");
+    const dropOverlay = document.getElementById("drop-overlay");
+
+    let scenes = [];       // { name, data }
+    let activeIndex = -1;  // -1 = none selected
+    let dragSourceIndex = -1;
+    let ws = null;              // relay link to the phone (see Phone bridge)
+    let transitioning = false;  // mirrors slew-status from the main page
+
+    function clearDragOver() {
+      listEl.querySelectorAll(".drag-over-top,.drag-over-bottom").forEach(el => {
+        el.classList.remove("drag-over-top", "drag-over-bottom");
+      });
+    }
+
+    // ── File loading ──────────────────────────────────────────────
+
+    loadBtn.addEventListener("click", () => fileInput.click());
+
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files.length > 0) loadFiles(Array.from(fileInput.files));
+      fileInput.value = "";
+    });
+
+    async function loadFiles(files) {
+      const jsonFiles = files.filter(f => f.name.endsWith(".json"));
+      jsonFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      for (const file of jsonFiles) {
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text);
+          scenes.push({ name: file.name.replace(/\.json$/, ""), data });
+        } catch (e) {
+          console.warn("Skipping invalid JSON:", file.name, e);
+        }
+      }
+      renderList();
+      updateNav();
+    }
+
+    // ── Clear all ───────────────────────────────────────────────
+
+    clearBtn.addEventListener("click", () => {
+      scenes = [];
+      activeIndex = -1;
+      renderList();
+      updateNav();
+    });
+
+    // ── Drag & drop ───────────────────────────────────────────────
+
+    let dragCounter = 0;
+    function isFileDrag(e) {
+      return e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files");
+    }
+    document.addEventListener("dragenter", (e) => {
+      e.preventDefault();
+      if (!isFileDrag(e)) return;
+      dragCounter++;
+      dropOverlay.classList.add("visible");
+    });
+    document.addEventListener("dragleave", (e) => {
+      e.preventDefault();
+      if (!isFileDrag(e)) return;
+      dragCounter--;
+      if (dragCounter <= 0) { dragCounter = 0; dropOverlay.classList.remove("visible"); }
+    });
+    document.addEventListener("dragover", (e) => e.preventDefault());
+    document.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      dropOverlay.classList.remove("visible");
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) loadFiles(files);
+    });
+
+    // ── Scene list rendering ──────────────────────────────────────
+
+    function renderList() {
+      listEl.querySelectorAll(".scene-item").forEach(el => el.remove());
+      const hasScenes = scenes.length > 0;
+      emptyMsg.style.display = hasScenes ? "none" : "";
+      tipEl.style.display = hasScenes ? "" : "none";
+      clearBtn.style.display = hasScenes ? "" : "none";
+
+      scenes.forEach((scene, i) => {
+        const item = document.createElement("div");
+        item.className = "scene-item" + (i === activeIndex ? " active" : "");
+        item.dataset.index = i;
+
+        item.draggable = true;
+
+        const drag = document.createElement("span");
+        drag.className = "scene-drag";
+        for (let b = 0; b < 3; b++) drag.appendChild(document.createElement("span"));
+
+        const num = document.createElement("span");
+        num.className = "scene-num";
+        num.textContent = i + 1;
+
+        const name = document.createElement("span");
+        name.className = "scene-name";
+        name.textContent = scene.name;
+
+        item.appendChild(drag);
+        item.appendChild(num);
+        item.appendChild(name);
+
+        const removeBtn = document.createElement("button");
+        removeBtn.className = "scene-remove";
+        removeBtn.textContent = "\u00d7";
+        removeBtn.title = "Remove scene";
+        removeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          removeScene(i);
+        });
+        item.appendChild(removeBtn);
+
+        item.addEventListener("click", () => activateScene(i));
+
+        item.addEventListener("dragstart", (e) => {
+          dragSourceIndex = i;
+          item.classList.add("dragging");
+          e.dataTransfer.effectAllowed = "move";
+        });
+        item.addEventListener("dragend", () => {
+          item.classList.remove("dragging");
+          clearDragOver();
+          dragSourceIndex = -1;
+        });
+        item.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          clearDragOver();
+          if (i === dragSourceIndex) return;
+          const rect = item.getBoundingClientRect();
+          const half = (e.clientY - rect.top) < rect.height / 2;
+          item.classList.add(half ? "drag-over-top" : "drag-over-bottom");
+        });
+        item.addEventListener("drop", (e) => {
+          e.preventDefault();
+          if (dragSourceIndex === -1 || dragSourceIndex === i) return;
+          const rect = item.getBoundingClientRect();
+          const dropAbove = (e.clientY - rect.top) < rect.height / 2;
+          let targetIndex = dropAbove ? i : i + 1;
+          if (dragSourceIndex < targetIndex) targetIndex--;
+          const [moved] = scenes.splice(dragSourceIndex, 1);
+          scenes.splice(targetIndex, 0, moved);
+          if (activeIndex === dragSourceIndex) activeIndex = targetIndex;
+          else if (dragSourceIndex < activeIndex && targetIndex >= activeIndex) activeIndex--;
+          else if (dragSourceIndex > activeIndex && targetIndex <= activeIndex) activeIndex++;
+          dragSourceIndex = -1;
+          renderList();
+          updateNav();
+        });
+
+        listEl.appendChild(item);
+      });
+
+      statusEl.textContent = scenes.length === 0
+        ? "No scenes loaded"
+        : `${scenes.length} scene${scenes.length > 1 ? "s" : ""} loaded`;
+
+      // Every list change (load, clear, remove, reorder, activate) passes
+      // through here, so this keeps the phone's Scenes view current.
+      publishScenes();
+    }
+
+    function removeScene(index) {
+      scenes.splice(index, 1);
+      if (activeIndex >= scenes.length) activeIndex = scenes.length - 1;
+      if (scenes.length === 0) activeIndex = -1;
+      renderList();
+      updateNav();
+    }
+
+    // ── Scene activation ──────────────────────────────────────────
+
+    function activateScene(index) {
+      if (index < 0 || index >= scenes.length) return;
+      activeIndex = index;
+      chan.postMessage({ type: "load-scene", state: scenes[index].data });
+      renderList();
+      updateNav();
+      const activeEl = listEl.querySelector(".scene-item.active");
+      if (activeEl) activeEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    // ── Navigation ────────────────────────────────────────────────
+
+    function updateNav() {
+      prevBtn.disabled = activeIndex <= 0;
+      nextBtn.disabled = activeIndex >= scenes.length - 1;
+    }
+
+    prevBtn.addEventListener("click", () => {
+      if (activeIndex > 0) activateScene(activeIndex - 1);
+    });
+    nextBtn.addEventListener("click", () => {
+      if (activeIndex < scenes.length - 1) activateScene(activeIndex + 1);
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (activeIndex > 0) activateScene(activeIndex - 1);
+      } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        e.preventDefault();
+        if (scenes.length > 0 && activeIndex < scenes.length - 1) {
+          activateScene(activeIndex + 1);
+        } else if (scenes.length > 0 && activeIndex === -1) {
+          activateScene(0);
+        }
+      }
+    });
+
+    // ── Channel sync ──────────────────────────────────────────────
+    // ── Slew duration ──────────────────────────────────────────────
+    slewInput.addEventListener("change", () => {
+      const v = Math.max(0, parseFloat(slewInput.value) || 0);
+      slewInput.value = v;
+      chan.postMessage({ type: "set-slew-duration", duration: v });
+    });
+    slewInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") slewInput.blur();
+    });
+    slewCurve.addEventListener("change", () => {
+      chan.postMessage({ type: "set-slew-curve", curve: slewCurve.value });
+    });
+    fadeToggle.addEventListener("change", () => {
+      chan.postMessage({ type: "set-fade-transitions", enabled: fadeToggle.checked });
+    });
+    chan.postMessage({ type: "set-slew-duration", duration: parseFloat(slewInput.value) });
+    chan.postMessage({ type: "set-slew-curve", curve: slewCurve.value });
+    chan.postMessage({ type: "set-fade-transitions", enabled: fadeToggle.checked });
+
+    // Transition indicator — the main page announces slew start/end
+    // (see setSlewActive in channel.js). This panel is otherwise send-only.
+    const slewIndicator = document.getElementById("slew-indicator");
+    chan.addEventListener("message", (e) => {
+      const msg = e.data;
+      if (!msg || msg.type !== "slew-status") return;
+      slewIndicator.classList.toggle("visible", !!msg.active);
+      transitioning = !!msg.active;
+      publishScenes();
+    });
+
+    // ── Phone bridge ──────────────────────────────────────────────
+    // The phone is another device, so it cannot hear BroadcastChannel.
+    // This window joins the WebSocket relay itself: it publishes the
+    // scene names + active index as `scene-list` and takes
+    // `scene-activate` back, running it through activateScene() so the
+    // phone and this window behave identically. Scene data never leaves
+    // this window. The server keeps these types local (not sent to slaves).
+    function publishScenes() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({
+        type: "scene-list",
+        names: scenes.map(s => s.name),
+        activeIndex,
+        transitioning,
+      }));
+    }
+
+    function connectPhoneBridge() {
+      if (!location.host) return; // opened from disk — no relay to join
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}`);
+      ws.onopen = publishScenes;
+      ws.onmessage = (e) => {
+        let msg;
+        try { msg = JSON.parse(e.data); } catch (_) { return; }
+        if (msg.type === "scene-list-request") publishScenes();
+        else if (msg.type === "scene-activate" && Number.isInteger(msg.index)) activateScene(msg.index);
+      };
+      ws.onclose = () => { ws = null; setTimeout(connectPhoneBridge, 2000); };
+      ws.onerror = () => ws.close();
+    }
+
+    // Tell the phone the list is gone rather than leave it showing a stale one
+    window.addEventListener("pagehide", () => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "scene-list", closed: true }));
+    });
+
+    connectPhoneBridge();
+    chan.postMessage({ type: "hello" });
+  </script>
+</body>
+</html>

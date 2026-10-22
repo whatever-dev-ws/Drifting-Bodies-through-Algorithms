@@ -1,0 +1,14 @@
+{
+  "name": "ccl25-phone-control",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "vendor": "../scripts/vendor.sh",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "8.19.0"
+  }
+}

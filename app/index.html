@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Flocking (Main)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="vendor/p5.min.js"></script>
+  <!-- TF.js stack (WebGPU backend) — vendored locally, see vendor.sh. Never point these
+       back at a CDN: unpinned CDN tags drift and the rig needs to run offline. -->
+  <script src="vendor/tf-core.min.js"></script>
+  <script src="vendor/tf-backend-webgpu.min.js"></script>
+  <script src="vendor/tf-converter.min.js"></script>
+  <script src="vendor/pose-detection.min.js"></script>
+  <style>
+    html, body { margin:0; padding:0; background:#000; overflow:hidden; }
+    .overlay {
+      position: fixed; left: 10px; bottom: 10px; color:#fff; font-family: ui-monospace, monospace;
+      background: rgba(0,0,0,0.35); padding: 6px 10px; border-radius: 8px; font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Protocol check: file:// can't load ES modules or workers -->
+  <div id="file-protocol-error" style="display:none; position:fixed; inset:0; z-index:99999; background:#0e0e0f; color:#e8e8e8; font-family:ui-monospace,monospace; align-items:center; justify-content:center; text-align:center; padding:40px;">
+    <div>
+      <h1 style="font-size:24px; margin-bottom:16px;">HTTP Server Required</h1>
+      <p style="color:#9da3af; max-width:480px; line-height:1.6;">
+        This application uses ES modules and Web Workers, which require an HTTP server.<br><br>
+        Serve the <code style="background:#1f2937; padding:2px 6px; border-radius:4px;">codebase/</code> folder:
+      </p>
+      <pre style="background:#1f2937; padding:12px 20px; border-radius:8px; margin:16px auto; display:inline-block; text-align:left; line-height:1.8;">npx serve codebase
+<span style="color:#6b7280;">— or —</span>
+python3 -m http.server</pre>
+      <p style="color:#6b7280; font-size:12px; margin-top:12px;">Then open the URL shown in the terminal in Chrome.</p>
+    </div>
+  </div>
+  <script>
+    if (window.location.protocol === 'file:') {
+      document.getElementById('file-protocol-error').style.display = 'flex';
+    }
+  </script>
+
+  <div class="overlay" id="status">Controls: <span id="conn">connecting…</span> | Phone: <span id="phone-conn">—</span></div>
+  <div class="overlay" id="perf" style="left:auto; right:10px; bottom:10px; line-height:1.5; white-space:pre; pointer-events:none;"></div>
+
+  <script>
+    // Auto-open controls popup
+    window.addEventListener("load", () => {
+      const ctrlWin = window.open("controls.html", "flockControls", "width=520,height=720");
+      if (!ctrlWin) {
+        alert("Popup blocked. Please allow pop-ups for this site and reload.\n\nAlternatively, open controls.html manually in a new window.");
+      }
+    });
+  </script>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

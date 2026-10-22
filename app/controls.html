@@ -1,0 +1,760 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Flock Controls</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-window: #1c1c1e;
+      --bg-grouped: #2c2c2e;
+      --bg-elevated: #3a3a3c;
+      --separator: rgba(255,255,255,0.13);
+      --text-primary: #f2f2f7;
+      /* Text tones verified against WCAG AA (4.5:1) on the darkest surface
+         each is used on — see the contrast audit. Do not darken further. */
+      --text-secondary: #c7c7cc;
+      --text-tertiary: #a3a3a8;
+      /* --accent is a FILL that carries white text (4.9:1).
+         --accent-text is the lighter tone for accent-coloured text, icons and
+         borders on dark surfaces (4.9:1 on --bg-grouped). Not interchangeable. */
+      --accent: #0a6fd8;
+      --accent-text: #3d9bff;
+      --danger: #ff5147;
+      --control-bg: #48484a;
+      --control-bg-hover: #58585a;
+    }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg-window);
+      color: var(--text-primary);
+      margin: 0;
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Header */
+    header {
+      position: sticky; top: 0; z-index: 10;
+      background: rgba(28,28,30,0.8);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--separator);
+      display: flex; flex-direction: column;
+    }
+    .header-row {
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    header strong { font-size: 14px; font-weight: 600; }
+    #status { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+    /* Segmented tab bar */
+    .tab-bar {
+      display: flex; gap: 1px;
+      background: var(--bg-elevated);
+      /* No side margins — the sticky header already supplies the 16px gutter */
+      margin: 10px 0 0;
+      padding: 2px;
+      border-radius: 8px;
+      overflow-x: auto;
+      flex: 0 0 auto;
+    }
+    .tab-btn {
+      flex: 1;
+      display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 6px;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: var(--text-secondary);
+      padding: 6px 8px;
+      font: inherit; font-size: 0.75rem; font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
+    }
+    .tab-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+    .tab-btn:hover { background: rgba(255,255,255,0.06); }
+    .tab-btn.active {
+      background: var(--bg-grouped);
+      color: var(--accent-text);
+      /* No box-shadow: the bar's 2px padding is thinner than the blur, so the
+         shadow bled into it and read as a line along the top of the bar. The
+         fill + accent text already carry the selected state. */
+    }
+
+    /* Startup camera gate — shown until a camera source is picked */
+    /* Lives inside the setup panel now, which supplies the side padding */
+    .camera-gate {
+      margin: 12px 0 0;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.78rem;
+      font-weight: 500;
+      line-height: 1.35;
+    }
+    /* While gated nothing but the camera source is actionable: the whole tab
+       strip is inert, and only the first setup section (Source) stays live. */
+    body.camera-gated .tab-btn,
+    body.camera-gated #settingsClose {
+      opacity: 0.35;
+      pointer-events: none;
+    }
+    body.camera-gated #settings-body .section:not(:first-of-type) {
+      opacity: 0.35;
+      pointer-events: none;
+    }
+
+    /* Content area */
+    #controls { padding: 8px 16px 16px; }
+
+    /* Grouped sections */
+    .section {
+      margin: 16px 0;
+      border: none;
+      border-radius: 10px;
+      background: var(--bg-grouped);
+      overflow: hidden;
+    }
+    .section h3 {
+      margin: 0;
+      padding: 8px 16px 6px;
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      border-bottom: none;
+      background: transparent;
+    }
+
+    /* Divider between runs of sections that share a `group`
+       (Appearance tab). Unlabelled; sits outside the cards. */
+    .section-group {
+      margin: 24px 4px 0;
+      height: 0;
+      border-top: 1px solid var(--separator);
+    }
+    .section-group + .section { margin-top: 24px; }
+
+    /* Live model diagram (Boids tab) */
+    .model-viz-pair {
+      display: flex;
+      gap: 16px;
+      padding: 4px 16px 14px;
+      align-items: flex-start;
+    }
+    .model-viz {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+    }
+    .model-viz + .model-viz {
+      border-left: 1px solid var(--separator);
+      padding-left: 16px;
+    }
+    .model-viz-head {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-primary);
+      padding-top: 2px;
+    }
+    .model-viz-panel {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 0;
+    }
+    .model-viz-panel svg {
+      width: 100%;
+      max-width: 190px;
+      height: auto;
+    }
+    /* Disc behind each S/A/C ring tag — matches the section background so the
+       letter reads as a break in the ring rather than an overlay. */
+    .ring-tag-bg { fill: var(--bg-grouped); }
+    /* Diagram furniture: theme-bound so it inverts with the palette rather
+       than staying dark-on-dark. */
+    .model-dot      { fill: var(--text-primary); }
+    .model-baseline { stroke: var(--text-tertiary); stroke-width: 1; }
+    .model-zero     { fill: var(--text-tertiary); font-size: 10px; }
+    /* Force slider track + baseline-to-mark fill, under each force mark */
+    .model-track      { stroke: var(--control-bg-hover); stroke-width: 2; stroke-linecap: round; }
+    .model-track-fill { stroke-width: 2; stroke-opacity: 0.55; }
+    .model-viz-title {
+      font-size: 11px;
+      color: var(--text-secondary);
+      padding: 2px 0 6px;
+    }
+    .model-viz-legend {
+      border-collapse: collapse;
+      align-self: center;
+      font-size: 12px;
+      flex: 0 0 auto;
+    }
+    .model-viz-legend th {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--text-secondary);
+      text-align: right;
+      padding: 3px 0 6px 14px;
+    }
+    .model-viz-legend td {
+      text-align: right;
+      padding: 3px 0 3px 14px;
+      font-variant-numeric: tabular-nums;
+    }
+    .model-viz-legend td:first-child,
+    .model-viz-legend th:first-child {
+      text-align: left;
+      padding-left: 0;
+    }
+    .model-viz-legend input[type="number"] {
+      width: 48px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      font: inherit;
+      font-size: 12px;
+      color: var(--text-primary);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      padding: 2px 2px;
+      -moz-appearance: textfield;
+      margin: 0;
+    }
+    .model-viz-legend input[type="number"]::-webkit-inner-spin-button,
+    .model-viz-legend input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .model-viz-legend input[type="number"]:focus {
+      outline: none;
+      border-color: var(--accent-text);
+      background: var(--bg-grouped);
+    }
+
+    /* Slider rows */
+    .row {
+      display: grid;
+      grid-template-columns: var(--row-label-w, 130px) 1fr 52px 36px;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+    }
+    .row + .row { border-top: 1px solid var(--separator); }
+    /* Tile rows (`tile: true`): label + control packed into a responsive
+       grid — as many columns as fit. Each tile is a compact two-column row. */
+    .row-tiles {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      column-gap: 4px;
+    }
+    .row-tiles .row {
+      grid-template-columns: 1fr auto;
+      gap: 6px;
+      padding: 6px 8px;   /* fits "Body Cohesion" + swatch in a 150px tile */
+    }
+    .row-tiles .row label { white-space: nowrap; }
+    .row label { font-size: 13px; color: var(--text-primary); }
+    .row > :nth-child(3) { font-size: 12px; color: var(--text-secondary); text-align: right; font-variant-numeric: tabular-nums; }
+    .row input[type="number"] {
+      width: 52px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      font: inherit;
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      padding: 2px 2px;
+      -moz-appearance: textfield;
+      margin: 0;
+    }
+    .row input[type="number"]::-webkit-inner-spin-button,
+    .row input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .row input[type="number"]:hover { border-color: var(--separator); }
+    .row input[type="number"]:focus { border-color: var(--accent-text); outline: none; color: var(--text-primary); background: var(--bg-window); }
+    /* Value typed past the slider's range — the slider handle is pinned at an
+       end, so this box is the only accurate readout. Declared after :focus so
+       it wins at equal specificity; the :focus variant covers while editing. */
+    .row input[type="number"].out-of-range,
+    .row input[type="number"].out-of-range:focus {
+      color: #ff9500;
+      font-weight: 600;
+    }
+
+    /* Checkbox rows */
+    .chk {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 16px;
+    }
+    .chk + .chk, .chk + .row, .row + .chk { border-top: 1px solid var(--separator); }
+    .chk label { font-size: 13px; color: var(--text-primary); }
+
+    /* Native form controls with accent color */
+    input[type=range] { width: 100%; accent-color: var(--accent-text); }
+    input[type=checkbox] { accent-color: var(--accent-text); }
+
+    /* Select */
+    select {
+      width: 100%;
+      font: inherit; font-size: 13px;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: none;
+      border-radius: 6px;
+      padding: 6px 8px;
+      cursor: pointer;
+    }
+    select:hover { background: var(--control-bg-hover); }
+
+    /* Buttons */
+    button {
+      font: inherit; font-size: 13px; font-weight: 500;
+      background: var(--control-bg);
+      color: var(--text-primary);
+      border: none;
+      border-radius: 6px;
+      padding: 7px 14px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover { background: var(--control-bg-hover); }
+    button:active { background: var(--bg-elevated); }
+    #recBtn {
+      background: rgba(255,81,71,0.08); color: var(--danger);
+      min-width: 72px; text-align: center;
+      font-variant-numeric: tabular-nums;
+      box-sizing: border-box;
+    }
+    #recBtn:hover { background: rgba(255,81,71,0.24); }
+    #recBtn.rec-active { background: var(--danger); color: #1c1c1e; }
+
+    /* Header button groups */
+    .btn-group {
+      display: flex;
+      gap: 1px;
+      background: var(--separator);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .btn-group button {
+      border-radius: 0;
+      padding: 7px 10px;
+    }
+    .btn-group button:first-child { border-radius: 6px 0 0 6px; }
+    .btn-group button:last-child { border-radius: 0 6px 6px 0; }
+    .btn-group button:only-child { border-radius: 6px; }
+
+    #scenesBtn { background: rgba(61,155,255,0.14); color: var(--accent-text); }
+    #scenesBtn:hover { background: rgba(10,132,255,0.28); }
+
+    /* Setup (cog) side panel */
+    #settingsBtn {
+      display: flex; align-items: center; justify-content: center;
+      padding: 6px 8px;
+    }
+    #settingsBtn svg {
+      width: 16px; height: 16px;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .settings-backdrop {
+      display: none;
+      position: fixed; inset: 0; z-index: 40;
+      background: rgba(0,0,0,0.55);
+    }
+    .settings-backdrop.visible { display: block; }
+    .settings-panel {
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 41;
+      width: min(420px, 92vw);
+      background: var(--bg-window);
+      border-left: 1px solid var(--separator);
+      box-shadow: -8px 0 32px rgba(0,0,0,0.6);
+      overflow-y: auto;
+      padding: 0 16px 24px;
+    }
+    .settings-panel[hidden] { display: none; }
+    .settings-head {
+      position: sticky; top: 0; z-index: 1;
+      background: var(--bg-window);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 0 8px;
+      border-bottom: 1px solid var(--separator);
+    }
+    .settings-head strong { font-size: 14px; font-weight: 600; }
+    #settingsClose {
+      background: transparent; color: var(--text-secondary);
+      font-size: 20px; line-height: 1; padding: 2px 8px;
+    }
+    #settingsClose:hover { background: var(--control-bg); color: var(--text-primary); }
+    .settings-note {
+      font-size: 11px; color: var(--text-tertiary);
+      padding: 10px 0 0; line-height: 1.4;
+    }
+
+    /* Switch — a checkbox painted as a toggle. Still an <input type=checkbox>
+       so state export/import and keyboard behaviour are unchanged. */
+    .switch {
+      appearance: none; -webkit-appearance: none;
+      flex: 0 0 auto;
+      width: 30px; height: 18px;
+      margin: 0;
+      border-radius: 9px;
+      background: var(--control-bg);
+      position: relative;
+      cursor: pointer;
+      transition: background 0.18s ease;
+    }
+    .switch::after {
+      content: "";
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--text-primary);
+      transition: transform 0.18s ease;
+    }
+    .switch:checked { background: var(--accent); }
+    .switch:checked::after { transform: translateX(12px); }
+    .switch:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) {
+      .switch, .switch::after { transition: none; }
+    }
+
+    /* Color picker */
+    .color-row input[type=color] {
+      width: 36px; height: 24px;
+      border: none; border-radius: 6px;
+      background: var(--bg-elevated);
+      padding: 2px; cursor: pointer;
+    }
+
+    /* Tips */
+    .tip {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      padding: 0 16px 6px;
+      line-height: 1.4;
+    }
+    /* Setup → Debug → Tooltips off (local pref, see LOCAL_PREFS in controls.js) */
+    body.hide-tips .tip { display: none; }
+
+    /* Sub-rows for child controls */
+    .sub-row { border-left: 2px solid var(--bg-elevated); margin-left: 16px; padding-left: 4px; }
+
+    small { color: var(--text-secondary); }
+
+    /* Pose tab: skeleton (left) + keypoint detail panel (right) */
+    .pose-body-layout {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .kp-detail-panel { flex: 1; min-width: 0; --row-label-w: 60px; }
+    .kp-detail-panel .section { margin-top: 8px; }
+    .kp-detail-empty {
+      font-size: 12px;
+      color: var(--text-tertiary);
+      line-height: 1.4;
+      padding: 24px 4px;
+    }
+
+    /* Body skeleton tab */
+    .body-svg-wrap {
+      flex: 0 0 auto;
+      display: flex;
+      justify-content: center;
+      padding: 16px 0 8px;
+    }
+    .body-svg-wrap svg {
+      width: 220px;
+      height: 380px;
+    }
+    .body-svg-wrap .bone { stroke: var(--control-bg-hover); stroke-width: 2; }
+    .body-svg-wrap .kp-node {
+      cursor: pointer;
+      transition: fill 0.15s, stroke 0.15s;
+      stroke-width: 2;
+    }
+    .body-svg-wrap .kp-node.active { fill: var(--accent-text); stroke: var(--accent-text); }
+    .body-svg-wrap .kp-node.inactive { fill: transparent; stroke: var(--control-bg-hover); }
+
+    /* Multi-machine link strip — its own row under the header buttons, shown
+       on a master or slave only, so the standalone row never changes */
+    .link-bar {
+      display: flex; align-items: center; gap: 10px;
+      margin: 10px 0 0;
+      padding: 3px 3px 3px 10px;
+      border-radius: 8px;
+      background: var(--bg-grouped);
+      font-size: 12px;
+    }
+    .link-bar[hidden] { display: none; }
+    .link-role {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 10px; font-weight: 600;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .link-bar.master .link-role { color: #34c759; }
+    .link-bar.slave .link-role { color: #ff9500; }
+    .link-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    /* Hollow dot = no live link (master with no slaves, slave cut off) */
+    .link-bar.offline .link-dot { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+    .link-status {
+      flex: 1; min-width: 0;
+      color: var(--text-secondary);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #linkSyncBtn { padding: 4px 10px; font-size: 12px; white-space: nowrap; }
+
+    /* QR code section — lives in the Setup panel, after #settings-body */
+    .qr-section {
+      margin: 16px 0;
+      border-radius: 10px;
+      background: var(--bg-grouped);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .qr-section canvas { border-radius: 6px; }
+    .qr-info { flex: 1; min-width: 0; }
+    .qr-info .qr-title {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      margin-bottom: 4px;
+    }
+    .qr-info .qr-url {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      font-family: ui-monospace, monospace;
+      word-break: break-all;
+      line-height: 1.4;
+    }
+    /* Export modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-backdrop.visible { display: flex; }
+    .modal {
+      background: var(--bg-grouped);
+      border-radius: 12px;
+      padding: 16px;
+      width: 280px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+    .modal h4 {
+      font-size: 13px;
+      font-weight: 600;
+      margin: 0 0 10px;
+    }
+    .modal input[type="text"] {
+      width: 100%;
+      font: inherit;
+      font-size: 13px;
+      padding: 7px 10px;
+      border: 1px solid var(--separator);
+      border-radius: 6px;
+      background: var(--bg-window);
+      color: var(--text-primary);
+      box-sizing: border-box;
+    }
+    .modal input[type="text"]:focus { border-color: var(--accent-text); outline: none; }
+    .modal .hint {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: 6px;
+    }
+
+    /* Import modal — same shell as Export, wider and scrolling */
+    .modal.modal-import {
+      width: min(440px, calc(100vw - 32px));
+      max-height: calc(100vh - 48px);
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+    }
+    .import-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 11px; color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .import-quick { display: flex; gap: 4px; }
+    .import-quick button { padding: 3px 10px; font-size: 11px; }
+    .import-tree {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      background: var(--bg-window);
+      border-radius: 8px;
+      border: 1px solid var(--separator);
+    }
+    .import-tab + .import-tab { border-top: 1px solid var(--separator); }
+    .import-tab-head, .import-sec {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px;
+    }
+    .import-tab-head {
+      position: sticky; top: 0; z-index: 1;
+      background: var(--bg-grouped);
+      font-weight: 600;
+    }
+    .import-sec { padding-left: 22px; color: var(--text-secondary); }
+    .import-tab-head label, .import-sec label {
+      flex: 1; display: flex; align-items: center; gap: 8px; cursor: pointer; min-width: 0;
+    }
+    .import-n {
+      font-size: 11px; color: var(--text-tertiary);
+      font-variant-numeric: tabular-nums;
+    }
+    .import-toggle {
+      padding: 0; width: 22px; height: 22px;
+      background: transparent;
+      color: var(--text-tertiary);
+      font-size: 15px; line-height: 22px;
+      transition: transform 0.15s;
+    }
+    .import-toggle[aria-expanded="true"] { transform: rotate(90deg); }
+    .import-items[hidden], .import-tab > div[hidden] { display: none; }
+    .import-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 10px 4px 46px;
+      cursor: pointer;
+    }
+    .import-tab > div > .import-items:not(.import-sec + .import-items) .import-item { padding-left: 22px; }
+    .import-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .import-val {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 11px; color: var(--text-tertiary);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .import-swatch {
+      width: 10px; height: 10px; border-radius: 3px;
+      border: 1px solid var(--separator);
+    }
+    .import-actions {
+      display: flex; justify-content: flex-end; gap: 8px;
+      margin-top: 12px;
+    }
+    button.primary { background: var(--accent); color: #fff; }
+    button.primary:hover { background: #0b7cf0; }
+    button:disabled { opacity: 0.4; cursor: default; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-row">
+      <div>
+        <strong>Flocking Controls</strong>
+        <div id="status">Connecting…</div>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button id="recBtn" title="Record the canvas and every overlay (MP4, up to 1920×1080 @ 30fps)">Rec</button>
+        <div class="btn-group">
+          <button id="scenesBtn" title="Open Scene Manager">Scenes</button>
+        </div>
+        <div class="btn-group">
+          <button id="exportBtn" title="Export parameters to JSON">Export</button>
+          <button id="importBtn" title="Import parameters from JSON">Import</button>
+        </div>
+        <button id="syncBtn" title="Request full state from main">Sync</button>
+        <button id="settingsBtn" title="Setup — camera, pose detection, diagnostics" aria-label="Setup" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <input type="file" id="importFile" accept=".json" style="display:none">
+      </div>
+    </div>
+    <!-- Master/slave link: role, live link status and the cross-machine sync.
+         Filled and shown by initRole() in controls.js; hidden in standalone. -->
+    <div id="link-bar" class="link-bar" hidden>
+      <span class="link-role"><span class="link-dot"></span><span id="link-role-label"></span></span>
+      <span id="link-status" class="link-status"></span>
+      <button type="button" id="linkSyncBtn"></button>
+    </div>
+    <!-- Tab bar lives inside the sticky header so it stays put while the
+         panel scrolls. Keep it here rather than as a sibling — a separate
+         sticky element would need a hardcoded `top` matching header height. -->
+    <div id="tab-bar" class="tab-bar"></div>
+  </header>
+
+  <div id="controls"></div>
+
+  <!-- Setup panel: rig configuration that is set once and then left alone.
+       Sections with tab:"settings" are mounted into #settings-body. -->
+  <div class="settings-backdrop" id="settings-backdrop"></div>
+  <aside class="settings-panel" id="settings-panel" role="dialog" aria-modal="true"
+         aria-labelledby="settings-title" hidden>
+    <div class="settings-head">
+      <strong id="settings-title">Setup</strong>
+      <button id="settingsClose" aria-label="Close setup">&times;</button>
+    </div>
+    <div id="settings-body"></div>
+    <div id="qr-section" class="qr-section" style="display:none;">
+      <canvas id="qr-canvas" width="96" height="96"></canvas>
+      <div class="qr-info">
+        <div class="qr-title">Phone Controller</div>
+        <div class="qr-url" id="qr-url"></div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="modal-backdrop" id="export-modal">
+    <div class="modal">
+      <h4>Export Scene</h4>
+      <input type="text" id="export-filename" placeholder="scene name">
+      <div class="hint">Enter to export · Esc to cancel</div>
+    </div>
+  </div>
+
+  <!-- Import: choose which of the scene's parameters to load (controls.js
+       openImportModal). Grouped like the panel tabs. -->
+  <div class="modal-backdrop" id="import-modal">
+    <div class="modal modal-import" role="dialog" aria-modal="true" aria-labelledby="import-title">
+      <h4 id="import-title">Import Scene</h4>
+      <div class="import-bar">
+        <span id="import-count"></span>
+        <span class="import-quick">
+          <button type="button" id="import-all">All</button>
+          <button type="button" id="import-none">None</button>
+        </span>
+      </div>
+      <div class="import-tree" id="import-tree"></div>
+      <div class="import-actions">
+        <button type="button" id="import-cancel">Cancel</button>
+        <button type="button" id="import-load" class="primary">Load all</button>
+      </div>
+      <div class="hint">Enter to load · Esc to cancel</div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="rec-modal">
+    <div class="modal">
+      <h4>Save Recording</h4>
+      <input type="text" id="rec-filename" placeholder="recording name">
+      <div class="hint">Enter to save · Esc uses default name</div>
+    </div>
+  </div>
+
+  <script src="vendor/qrcode.min.js"></script>
+  <script src="controls.js"></script>
+</body>
+</html>
