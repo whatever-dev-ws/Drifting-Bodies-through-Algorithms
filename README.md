@@ -37,4 +37,4 @@ See `RUNNING.md` for operation and `DOCUMENTATION.md` for architecture.
 
 This project was developed for [INTRA – Designing Embodied Human-Data IntraActions](https://intra.projects.unibz.it), a research project of the Free University of Bozen-Bolzano.
 
-Software development, user interface design and system design by Rocco Lorenzo Modugno and Andrea Maffei, commissioned by the INTRA project.
+System design, user interface design and LLM-assisted implementation by Rocco Lorenzo Modugno and Andrea Maffei, commissioned by the INTRA project.
