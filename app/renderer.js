@@ -261,9 +261,6 @@ export class DebugOverlay {
     this.canvas.height = height;
   }
 
-  // False while the overlay is cleared and idle — the recorder skips it then
-  get hasContent() { return !!this._wasDirty; }
-
   render(positions, velocities, localCOMs, pathData, state, videoEl, videoTx, scaledPoses, gridAnalytics) {
     const ctx = this.ctx;
     const cw = this.canvas.width;

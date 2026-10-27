@@ -49,32 +49,11 @@ let statusBarEl = null;
 let perfUpdateTimer = 0;
 
 // MediaRecorder
-// The recorder never captures the on-screen canvases directly: boids live on
-// p5's GL canvas and everything else (COM lines, trails, radii, skeleton,
-// heatmaps, webcam) on the DebugOverlay canvas above it. Each recorded frame
-// composites both into recCanvas, at a capped size and a fixed rate.
-const REC_FPS = 30;
-const REC_MAX_LONG = 1920;  // output long side, px
-const REC_MAX_SHORT = 1080; // output short side, px
-// First supported wins. H.264 goes to the hardware encoder (VideoToolbox on a
-// Mac); VP8/VP9 are encoded in software on the CPU, VP9 most expensively.
-const REC_FORMATS = [
-  { mime: 'video/mp4;codecs=avc1.640028', ext: 'mp4' },
-  { mime: 'video/mp4;codecs=avc1', ext: 'mp4' },
-  { mime: 'video/webm;codecs=h264', ext: 'webm' },
-  { mime: 'video/webm;codecs=vp8', ext: 'webm' },
-  { mime: 'video/webm', ext: 'webm' },
-];
 let mediaRecorder = null;
 let recordedChunks = [];
 let wasRecording = false;
-let recCanvas = null;     // composite target, captured with captureStream(0)
-let recCtx = null;
-let recTrack = null;      // its video track; frames are pushed via requestFrame()
-let recNextFrame = 0;     // performance.now() at which the next frame is due
 let pendingRecFilename = null; // filename chosen in the rename modal
 let pendingRecBlobUrl = null;  // finished recording, held until a name is confirmed
-let pendingRecExt = 'webm';    // container of the held recording
 
 // Called from channel.js when the controls popup confirms (or defaults) a name.
 // The recording is downloaded only once a name arrives, so the file is never
@@ -89,7 +68,7 @@ export function setRecFilename(name) {
 function finalizeRecordingDownload() {
   if (!pendingRecBlobUrl || pendingRecFilename === null) return;
   let name = pendingRecFilename;
-  if (!name.toLowerCase().endsWith('.' + pendingRecExt)) name += '.' + pendingRecExt;
+  if (!name.toLowerCase().endsWith('.webm')) name += '.webm';
   const a = document.createElement('a');
   a.href = pendingRecBlobUrl;
   a.download = name;
@@ -130,16 +109,19 @@ export function triggerFullscreen() {
 // projector afterwards keeps the density of the screen it loaded on (Retina 2
 // vs projector 1). Boids are GL points sized in buffer pixels, so the same
 // Boid Size then draws at half or double size on different machines.
-// Safe mid-take: the recorder's output size is fixed at start and each frame
-// is scaled into it (see startRecording).
 export function refreshDisplay() {
-  pixelDensity(Math.ceil(window.devicePixelRatio) || 1);
-  window.windowResized();
+  // A recording captures a fixed 1280×720 buffer; resizing it mid-take would
+  // change the video's frame size. The report still goes out, flagged.
+  if (!state.recordingMode) {
+    pixelDensity(Math.ceil(window.devicePixelRatio) || 1);
+    window.windowResized();
+  }
   return {
     dpr: window.devicePixelRatio,
     density: pixelDensity(),
     canvas: [width, height],
     screen: [window.screen.width, window.screen.height],
+    recording: !!state.recordingMode,
   };
 }
 
@@ -223,7 +205,12 @@ async function initCameraGate() {
 // --- p5 lifecycle (attached to window for global mode) ---
 
 window.setup = function () {
-  const w = windowWidth, h = windowHeight;
+  let w, h;
+  if (state.recordingMode) {
+    w = 1280; h = 720;
+  } else {
+    w = windowWidth; h = windowHeight;
+  }
 
   createCanvas(w, h, WEBGL);
 
@@ -305,26 +292,20 @@ function onWorkerMessage(e) {
 }
 
 function startRecording() {
-  // Output keeps the window's aspect, capped so a Retina or 4K canvas isn't
-  // encoded at full size. Encoders need even dimensions. Fixed for the whole
-  // take: a mid-recording window resize stretches rather than re-sizing.
-  const scale = Math.min(1, REC_MAX_LONG / Math.max(width, height), REC_MAX_SHORT / Math.min(width, height));
-  recCanvas = document.createElement('canvas');
-  recCanvas.width = Math.max(2, Math.round(width * scale / 2) * 2);
-  recCanvas.height = Math.max(2, Math.round(height * scale / 2) * 2);
-  recCtx = recCanvas.getContext('2d', { alpha: false });
-
-  // Rate 0: the browser captures nothing on its own, only on requestFrame()
-  const stream = recCanvas.captureStream(0);
-  recTrack = stream.getVideoTracks()[0];
-  recNextFrame = 0;
+  const canvas = document.querySelector('canvas');
+  const stream = canvas.captureStream(30);
   recordedChunks = [];
 
-  const format = REC_FORMATS.find(f => MediaRecorder.isTypeSupported(f.mime))
-    || { mime: '', ext: 'webm' };
+  // Pick a supported codec
+  const mimeTypes = [
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+  ];
+  const mimeType = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || '';
 
   mediaRecorder = new MediaRecorder(stream, {
-    mimeType: format.mime,
+    mimeType,
     videoBitsPerSecond: 8_000_000,
   });
 
@@ -336,37 +317,16 @@ function startRecording() {
     // Hold the finished recording — download waits until a name is confirmed.
     const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
     pendingRecBlobUrl = URL.createObjectURL(blob);
-    pendingRecExt = format.ext;
     recordedChunks = [];
     mediaRecorder = null;
-    stream.getTracks().forEach(t => t.stop());
     finalizeRecordingDownload(); // downloads now if a name was already chosen
   };
 
   mediaRecorder.start(1000); // collect in 1s chunks
-  console.log(`[rec] started — ${format.mime || 'default'} ${recCanvas.width}×${recCanvas.height} @ ${REC_FPS}fps`);
-}
-
-// Called at the end of draw(), after both canvases are rendered for this frame
-// (the GL buffer is only readable within the same task). Draws run at ~60fps;
-// only every REC_FPS-th of a second is composited and handed to the encoder.
-function captureRecordingFrame() {
-  if (!recTrack || recTrack.readyState !== 'live') return;
-  const now = performance.now();
-  if (now < recNextFrame) return;
-  // Schedule from the due time, not from now, so the rate doesn't drift; a
-  // stall resets it instead of bursting to catch up.
-  recNextFrame = Math.max(recNextFrame + 1000 / REC_FPS, now + 1000 / REC_FPS - 4);
-
-  const w = recCanvas.width, h = recCanvas.height;
-  recCtx.drawImage(drawingContext.canvas, 0, 0, w, h);
-  if (debugOverlay.hasContent) recCtx.drawImage(debugOverlay.canvas, 0, 0, w, h);
-  recTrack.requestFrame();
+  console.log('[rec] started');
 }
 
 function stopRecording() {
-  recTrack = null; // no more frames; onstop releases the stream
-  recCanvas = recCtx = null;
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
     mediaRecorder.stop();
     console.log('[rec] stopped — downloading');
@@ -456,8 +416,6 @@ window.draw = function () {
     : null;
   debugOverlay.render(positions, velocities, localCOMs, pathData, state, video ? video.elt : null, vidTx, scaledPoses, gridResult);
 
-  if (mediaRecorder) captureRecordingFrame();
-
   // Update perf overlay (~4 Hz to avoid layout thrash)
   perfUpdateTimer += deltaTime;
   if (perfUpdateTimer > 250) {
@@ -495,8 +453,10 @@ window.keyPressed = function () {
 };
 
 window.windowResized = function () {
-  resizeCanvas(windowWidth, windowHeight);
-  debugOverlay.resize(windowWidth, windowHeight);
+  if (!state.recordingMode) {
+    resizeCanvas(windowWidth, windowHeight);
+    debugOverlay.resize(windowWidth, windowHeight);
+  }
   if (video) {
     video.size(width, height);
   }

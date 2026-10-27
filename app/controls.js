@@ -556,6 +556,7 @@ function renderDisplayReports() {
     if (r.canvas[0] !== r.screen[0] || r.canvas[1] !== r.screen[1]) {
       part(`screen ${r.screen[0]}×${r.screen[1]}`, true, "The canvas doesn't fill the screen: window not full screen (press F)");
     }
+    if (r.recording) part("recording, not re-read", true);
     displayReportEl.appendChild(line);
   }
 }
@@ -2357,51 +2358,39 @@ statusEl.textContent = "Connecting\u2026";
 sendHello();
 chan.postMessage({ type: "request-devices" });
 
-// Master/slave link strip. The header row stays identical to standalone (Sync
-// still pulls from this machine's main page); the role, live link status and
-// the cross-machine sync get their own row under it.
+// Role-aware header buttons (master/slave)
 (function initRole() {
-  const bar = document.getElementById('link-bar');
-  const statusText = document.getElementById('link-status');
-  const linkBtn = document.getElementById('linkSyncBtn');
-
-  function render(info) {
-    let online, text;
-    if (info.role === 'master') {
-      const n = info.slaveCount || 0;
-      online = n > 0;
-      text = n === 0 ? 'No slaves connected' : `${n} slave${n === 1 ? '' : 's'} connected`;
-    } else {
-      online = !!info.connected;
-      const host = info.master ? ` ${info.master}` : '';
-      text = online ? `Linked to master${host}` : `Master${host} unreachable`;
-    }
-    bar.classList.toggle('offline', !online);
-    statusText.textContent = text;
-    statusText.title = text;
-    linkBtn.disabled = !online;
-  }
-
-  const poll = () => fetch('/api/role').then(r => r.json()).then(render).catch(() => {});
-
   fetch('/api/role')
     .then(r => r.json())
-    .then(info => {
-      if (info.role !== 'master' && info.role !== 'slave') return;
-      const master = info.role === 'master';
-      bar.classList.add(info.role);
-      document.getElementById('link-role-label').textContent = master ? 'Master' : 'Slave';
-      linkBtn.textContent = master ? 'Push to Slaves' : 'Pull from Master';
-      linkBtn.title = master
-        ? 'Send the full current state to every slave machine'
-        : 'Replace this machine’s state with the master’s (camera and detection stay local)';
-      linkBtn.addEventListener('click', () => {
-        chan.postMessage({ type: master ? 'sync-slaves' : 'sync-to-master' });
-      });
-      render(info);
-      bar.hidden = false;
-      // Slaves come and go during setup; keep the count and link state live
-      setInterval(poll, 3000);
+    .then(role => {
+      const headerDiv = document.querySelector('header > div:first-child');
+      if (role.role === 'master') {
+        // Add role badge
+        const badge = document.createElement('span');
+        badge.className = 'role-badge master';
+        badge.textContent = 'Master';
+        headerDiv.appendChild(badge);
+        // Replace Sync button
+        syncBtn.textContent = 'Sync Slaves';
+        syncBtn.title = 'Push current state to all slave machines';
+        syncBtn.removeEventListener('click', syncHandler);
+        syncBtn.addEventListener('click', () => {
+          chan.postMessage({ type: 'sync-slaves' });
+        });
+      } else if (role.role === 'slave') {
+        // Add role badge
+        const badge = document.createElement('span');
+        badge.className = 'role-badge slave';
+        badge.textContent = 'Slave';
+        headerDiv.appendChild(badge);
+        // Replace Sync button
+        syncBtn.textContent = 'Sync to Main';
+        syncBtn.title = 'Pull state from the master machine';
+        syncBtn.removeEventListener('click', syncHandler);
+        syncBtn.addEventListener('click', () => {
+          chan.postMessage({ type: 'sync-to-master' });
+        });
+      }
     })
     .catch(() => {});
 })();

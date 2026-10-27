@@ -181,7 +181,7 @@ export const state = {
   // Performance overlay
   showPerformanceOverlay: true,
 
-  // Recording mode: main.js records canvas + overlay while true
+  // Recording mode: locks canvas to 1280×720
   recordingMode: false,
 };
 

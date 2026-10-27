@@ -89,7 +89,7 @@ const server = http.createServer((req, res) => {
     if (ROLE === 'master') {
       body = { role: 'master', slaveCount: slaveConnections.size };
     } else if (ROLE === 'slave') {
-      body = { role: 'slave', master: MASTER_HOST, connected:!!masterWs && masterWs.readyState === WebSocket.OPEN };
+      body = { role: 'slave', connected: !!masterWs && masterWs.readyState === WebSocket.OPEN };
     } else {
       body = { role: 'standalone' };
     }
