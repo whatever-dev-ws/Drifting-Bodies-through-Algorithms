@@ -8,3 +8,7 @@ node-compile-cache/
 .claude/
 
 .DS_Store
+
+# Local-only docs (not published)
+CLAUDE.md
+DEBUG-MASTER-SLAVE.md
