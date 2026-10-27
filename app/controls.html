@@ -448,6 +448,17 @@
     /* Setup → Debug → Tooltips off (local pref, see LOCAL_PREFS in controls.js) */
     body.hide-tips .tip { display: none; }
 
+    /* Setup → Debug → Re-detect Display: one line per machine */
+    .display-reports {
+      font-size: 11px;
+      color: var(--text-secondary);
+      padding: 0 16px 8px;
+      line-height: 1.6;
+      font-variant-numeric: tabular-nums;
+    }
+    .display-reports span + span::before { content: " · "; color: var(--text-tertiary); font-weight: 400; }
+    .display-reports .warn { color: #ff9500; font-weight: 600; }
+
     /* Sub-rows for child controls */
     .sub-row { border-left: 2px solid var(--bg-elevated); margin-left: 16px; padding-left: 4px; }
 

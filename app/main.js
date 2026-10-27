@@ -125,6 +125,24 @@ export function triggerFullscreen() {
   fullscreen(!fullscreen());
 }
 
+// Re-read the screen the window is on now (Setup → Debug → Re-detect Display).
+// p5 reads devicePixelRatio once, at page load, so a window dragged onto the
+// projector afterwards keeps the density of the screen it loaded on (Retina 2
+// vs projector 1). Boids are GL points sized in buffer pixels, so the same
+// Boid Size then draws at half or double size on different machines.
+// Safe mid-take: the recorder's output size is fixed at start and each frame
+// is scaled into it (see startRecording).
+export function refreshDisplay() {
+  pixelDensity(Math.ceil(window.devicePixelRatio) || 1);
+  window.windowResized();
+  return {
+    dpr: window.devicePixelRatio,
+    density: pixelDensity(),
+    canvas: [width, height],
+    screen: [window.screen.width, window.screen.height],
+  };
+}
+
 export async function switchCamera(deviceId) {
   if (!video || !video.elt) return;
   // Stop current tracks

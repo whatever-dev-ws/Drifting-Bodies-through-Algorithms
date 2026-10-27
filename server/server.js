@@ -55,6 +55,15 @@ function getLocalIP() {
   return 'localhost';
 }
 
+// --- Machine name, for Re-detect Display reports (Setup → Debug) ---
+// macOS ComputerName ("MacBook Air") — os.hostname() is often a generic
+// "Mac.lan" that every machine shares.
+let MACHINE_NAME = require('os').hostname().split('.')[0];
+try {
+  MACHINE_NAME = require('child_process')
+    .execFileSync('scutil', ['--get', 'ComputerName'], { encoding: 'utf8' }).trim() || MACHINE_NAME;
+} catch (_) {}
+
 // --- Connection tracking ---
 const clients = new Set();          // local browser/phone WebSocket clients
 const slaveConnections = new Set(); // slave server WS connections (master only)
@@ -80,10 +89,13 @@ const server = http.createServer((req, res) => {
     if (ROLE === 'master') {
       body = { role: 'master', slaveCount: slaveConnections.size };
     } else if (ROLE === 'slave') {
-      body = { role: 'slave', master: MASTER_HOST, connected: !!masterWs && masterWs.readyState === WebSocket.OPEN };
+      body = { role: 'slave', master: MASTER_HOST, connected:!!masterWs && masterWs.readyState === WebSocket.OPEN };
     } else {
       body = { role: 'standalone' };
     }
+    // Identifies this machine in Re-detect Display reports (Setup → Debug)
+    body.host = MACHINE_NAME;
+    body.ip = getLocalIP();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body));
     return;
@@ -143,6 +155,11 @@ wss.on('connection', (ws, req) => {
           for (const client of clients) {
             if (client.readyState === WebSocket.OPEN) client.send(ask);
           }
+        } else if (parsed.type === 'display-info') {
+          // A slave's Re-detect Display report → the master's controls window
+          for (const client of clients) {
+            if (client.readyState === WebSocket.OPEN) client.send(msg);
+          }
         }
       } catch (_) {}
     });
@@ -176,7 +193,7 @@ wss.on('connection', (ws, req) => {
     if (ROLE === 'master') {
       try {
         const parsed = JSON.parse(msg);
-        if (['set', 'state', 'snapshot', 'sync-slaves'].includes(parsed.type)) {
+        if (['set', 'state', 'snapshot', 'sync-slaves', 'display-refresh'].includes(parsed.type)) {
           for (const slave of slaveConnections) {
             if (slave.readyState === WebSocket.OPEN) {
               // For sync-slaves, convert to a snapshot so slaves apply the full state
@@ -187,11 +204,11 @@ wss.on('connection', (ws, req) => {
       } catch (_) {}
     }
 
-    // SLAVE: forward sync-to-master upstream
+    // SLAVE: forward sync-to-master and display reports upstream
     if (ROLE === 'slave' && masterWs && masterWs.readyState === WebSocket.OPEN) {
       try {
         const parsed = JSON.parse(msg);
-        if (parsed.type === 'sync-to-master') {
+        if (parsed.type === 'sync-to-master' || parsed.type === 'display-info') {
           masterWs.send(msg);
         }
       } catch (_) {}

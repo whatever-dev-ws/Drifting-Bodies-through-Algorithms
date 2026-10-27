@@ -1,7 +1,7 @@
 // channel.js — BroadcastChannel setup + WebSocket bridge, wired to state.js
 
 import { getState, setKey, isNumericKey, isBoolKey } from './state.js';
-import { markStateDirty, switchCamera, getVideoDevices, triggerCameraPopup, triggerFullscreen, setRecFilename } from './main.js';
+import { markStateDirty, switchCamera, getVideoDevices, triggerCameraPopup, triggerFullscreen, setRecFilename, refreshDisplay } from './main.js';
 
 let chan = null;
 let lastDeviceList = null;
@@ -11,6 +11,9 @@ let ws = null;
 // only BroadcastChannel↔WebSocket bridge) so the controls window gets it
 // even if it opens after the phone, and can export it as a scene's `_phone`.
 let lastPhoneLayout = null;
+// This machine's name and role (from /api/role), carried by display reports
+// so the master's controls window can tell the machines apart.
+let machine = { host: '', ip: '', role: '' };
 
 // ── Scene slew engine (main-thread side) ─────────────────────────────
 // Handles smooth transitions when a load-scene message arrives.
@@ -225,6 +228,16 @@ function handleMessage(msg, source) {
     triggerCameraPopup();
   } else if (msg.type === 'fullscreen') {
     triggerFullscreen();
+  } else if (msg.type === 'display-refresh') {
+    // From this machine's controls window: also ask every other machine (the
+    // master's server relays it to the slaves). From the relay: this one only.
+    if (source === 'bc') wsSend({ type: 'display-refresh' });
+    const report = { type: 'display-info', ...machine, ...refreshDisplay() };
+    chan.postMessage(report);
+    wsSend(report); // a slave's server forwards it up to the master
+  } else if (msg.type === 'display-info' && source === 'ws') {
+    // Another machine's report → this machine's controls window
+    chan.postMessage(msg);
   }
 }
 
@@ -276,6 +289,11 @@ export function initChannel() {
 
   // Start WebSocket bridge for phone controller
   initWebSocket();
+
+  fetch('/api/role')
+    .then(r => r.json())
+    .then(r => { machine = { host: r.host || '', ip: r.ip || '', role: r.role || '' }; })
+    .catch(() => {});
 }
 
 export function broadcastDevices(devices, currentDeviceId) {

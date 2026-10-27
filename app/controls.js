@@ -38,6 +38,8 @@ const CONTROLS = [
       // `local`: a preference of this controls window, not a simulation key —
       // never sent, never exported into scenes (see makeRowCheckbox).
       { label: "Tooltips", key: "showTooltips", type: "checkbox", local: true, tip: "Show the help text under controls in every tab. Saved in this browser only." },
+      // A one-off command, not a key — see makeRowDisplayRefresh
+      { label: "Re-detect Display", type: "display-refresh", tip: "Re-reads screen density and size. On the master it runs on every slave too. Use once all windows are on the projectors and full screen. Values in orange differ between machines or point to a setup problem (zoom not 100%, window not full screen)." },
     ]
   },
   // ─── Pose tab ───────────────────────────────────────────────
@@ -505,6 +507,59 @@ function makeRowCheckbox({ label, key, tip, local }) {
   return wrapper;
 }
 
+// ─── Re-detect Display (Setup → Debug) ─────────────────────────
+// The button sends display-refresh: every machine's main page re-reads its
+// screen and answers with a display-info report (slaves' reports are relayed
+// up to the master). The reports are listed under the button so mismatches
+// show from the master without opening DevTools. A command, not a key: it
+// never reaches state, scenes or the randomizer.
+const displayReports = new Map(); // "ip|role" (names may repeat) → latest report
+const displayReportEl = document.createElement("div");
+displayReportEl.className = "display-reports";
+
+function makeRowDisplayRefresh({ label, tip }) {
+  const { wrapper, row } = makeRowShell("chk", tip);
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = label;
+  btn.addEventListener("click", () => {
+    displayReports.clear();
+    displayReportEl.textContent = "Waiting for replies…";
+    chan.postMessage({ type: "display-refresh" });
+  });
+  row.appendChild(btn);
+  row.after(displayReportEl); // between the button and its tip
+  return wrapper;
+}
+
+function renderDisplayReports() {
+  displayReportEl.textContent = "";
+  const reports = [...displayReports.values()];
+  // Density and canvas size must match across machines for boids to look alike
+  const disagree = (f) => new Set(reports.map(f)).size > 1;
+  const densityOff = disagree(r => r.density);
+  const canvasOff = disagree(r => r.canvas.join("×"));
+  for (const r of reports) {
+    const line = document.createElement("div");
+    const part = (text, warn, title) => {
+      const s = document.createElement("span");
+      s.textContent = text;
+      if (warn) s.className = "warn";
+      if (title) s.title = title;
+      line.appendChild(s);
+    };
+    part(`${r.host || "?"}${r.role && r.role !== "standalone" ? ` (${r.role})` : ""}`, false, r.ip);
+    // A fractional ratio means Chrome zoom isn't 100% or macOS scales the display
+    part(`DPR ${+r.dpr.toFixed(2)}`, !Number.isInteger(r.dpr), "Fractional: Chrome zoom isn't 100% (Cmd+0) or the display is scaled");
+    part(`density ${r.density}`, densityOff);
+    part(`${r.canvas[0]}×${r.canvas[1]}`, canvasOff);
+    if (r.canvas[0] !== r.screen[0] || r.canvas[1] !== r.screen[1]) {
+      part(`screen ${r.screen[0]}×${r.screen[1]}`, true, "The canvas doesn't fill the screen: window not full screen (press F)");
+    }
+    displayReportEl.appendChild(line);
+  }
+}
+
 function makeRowSelect({ label, key, options, tip }) {
   const { wrapper, row } = makeRowShell("row", tip);
 
@@ -859,6 +914,8 @@ function buildUI() {
         wrapper = makeRowSelect(row);
       } else if (row.type === "color") {
         wrapper = makeRowColor(row);
+      } else if (row.type === "display-refresh") {
+        wrapper = makeRowDisplayRefresh(row);
       }
       if (wrapper) {
         if (row.parent) {
@@ -867,7 +924,7 @@ function buildUI() {
           if (!childKeysOf.has(row.parent)) childKeysOf.set(row.parent, []);
           childKeysOf.get(row.parent).push(row.key);
         }
-        wrappersByKey.set(row.key, wrapper);
+        if (row.key) wrappersByKey.set(row.key, wrapper);
         if (row.tile) {
           if (!tiles) {
             tiles = document.createElement("div");
@@ -1694,6 +1751,9 @@ chan.onmessage = (e) => {
   } else if (msg.type === "phone-layout") {
     // Relayed by channel.js from the phone; exported as the scene's _phone
     phoneLayout = msg.layout || null;
+  } else if (msg.type === "display-info") {
+    displayReports.set(`${msg.ip || msg.host}|${msg.role}`, msg);
+    renderDisplayReports();
   }
 };
 
@@ -1862,7 +1922,7 @@ const SCENE_EXCLUDED_KEYS = (() => {
   const set = new Set();
   for (const sec of CONTROLS) {
     if (sec.tab !== "settings") continue;
-    for (const row of sec.rows) set.add(row.key);
+    for (const row of sec.rows) if (row.key) set.add(row.key);
   }
   return set;
 })();
